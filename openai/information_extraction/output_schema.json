@@ -1,0 +1,28 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "document_information_extraction",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "document_description": { "type": "string" },
+        "structured_information": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "string" },
+              "short_description": { "type": "string" }
+            },
+            "required": ["name", "value"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["document_description", "structured_information"],
+      "additionalProperties": false
+    },
+    "strict": true
+  }
+}
