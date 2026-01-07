@@ -20,6 +20,7 @@ class Settings(BaseModel):
     openai_org_id: str | None = None
     openai_file_purpose: str = "assistants"
     manifest_filename: str = "manifest.json"
+    information_extraction_model: str = "gpt-5-mini"
 
 
 @lru_cache
@@ -38,5 +39,9 @@ def get_settings() -> Settings:
         manifest_filename=os.getenv(
             "MANIFEST_FILENAME",
             Settings.model_fields["manifest_filename"].default,
+        ),
+        information_extraction_model=os.getenv(
+            "INFORMATION_EXTRACTION_MODEL",
+            Settings.model_fields["information_extraction_model"].default,
         ),
     )

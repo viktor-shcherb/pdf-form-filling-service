@@ -55,3 +55,14 @@ class FormFillResponse(BaseModel):
     jobId: str
     status: str
     filledFormUrl: str | None = None
+
+
+class ExtractedFact(BaseModel):
+    name: str
+    value: str
+    short_description: str | None = None
+
+
+class InformationExtractionResult(BaseModel):
+    document_description: str
+    structured_information: list[ExtractedFact] = Field(default_factory=list)

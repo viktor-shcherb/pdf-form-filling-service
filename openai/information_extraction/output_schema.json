@@ -15,7 +15,7 @@
               "value": { "type": "string" },
               "short_description": { "type": "string" }
             },
-            "required": ["name", "value"],
+            "required": ["name", "value", "short_description"],
             "additionalProperties": false
           }
         }

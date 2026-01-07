@@ -27,6 +27,7 @@ uvicorn app.main:app --reload
 - `S3_BUCKET_URL` – public base URL returned to the frontend for `View on S3`.
 - `OPENAI_API_KEY` – required for forwarding uploads to OpenAI Files.
 - `OPENAI_FILE_PURPOSE` – purpose passed to OpenAI (default `assistants`).
+- `INFORMATION_EXTRACTION_MODEL` – OpenAI Responses model used for structured extraction (default `gpt-5-mini`).
 - Optional overrides: `OPENAI_API_BASE`, `OPENAI_ORG_ID`.
 - Add any other AWS/OpenAI environment variables (profiles, endpoints, etc.) as
   needed; the service will pick them up automatically.
@@ -36,11 +37,14 @@ uvicorn app.main:app --reload
 ### `POST /api/uploads`
 Multipart body with `userId` and a single `file`. The
 server copies the bytes to `s3://<bucket>/<userId>/<slug>/value.ext`, then sends
-that same payload to OpenAI. Success responses look like:
+that same payload to OpenAI. Once the file exists in OpenAI Files the service
+invokes the information-extraction prompt (see `openai/information_extraction`)
+with structured outputs and uploads the resulting JSON to
+`s3://<bucket>/<userId>/<slug>/info.json`. Success responses look like:
 
 ```json
 {
-  "status": "uploaded",
+  "status": "extracted",
   "slug": "supporting-doc",
   "fileName": "supporting-doc.pdf",
   "s3Url": "https://<bucket>.s3.amazonaws.com/user_id/supporting-doc/value.pdf",
@@ -60,7 +64,7 @@ frontend can restore the file list after reloads. Response shape:
   "updatedAt": "2026-01-07T12:34:56Z",
   "files": [
     {
-      "status": "uploaded",
+      "status": "extracted",
       "slug": "supporting-doc",
       "fileName": "supporting-doc.pdf",
       "s3Url": "https://<bucket>.s3.amazonaws.com/user_id/supporting-doc/value.pdf",
