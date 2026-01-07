@@ -1,0 +1,17 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "form_field_decision",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "field_name": { "type": "string" },
+        "action": { "type": "string", "enum": ["fill", "skip"] },
+        "value": { "type": "string" }
+      },
+      "required": ["field_name", "action", "value"],
+      "additionalProperties": false
+    },
+    "strict": true
+  }
+}

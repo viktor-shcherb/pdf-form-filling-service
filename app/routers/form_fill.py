@@ -1,58 +1,25 @@
-"""Form fill endpoints (still stubbed)."""
+"""Form fill endpoints that drive the actual pipeline."""
 
 from __future__ import annotations
 
-import asyncio
-import random
-import uuid
-
 from fastapi import APIRouter, Query
 
-from ..config import get_settings
 from ..schemas import FormFillRequest, FormFillResponse
-from ..utils import build_filled_form_url, slugify
+from ..services.form_fill_service import get_form_fill_job, start_form_fill_job
 
 router = APIRouter(prefix="/api/form-fill", tags=["form-fill"])
-
-FILL_STATUS_WEIGHTS: tuple[tuple[str, float], ...] = (
-    ("queued", 0.25),
-    ("filling", 0.25),
-    ("complete", 0.35),
-    ("error", 0.15),
-)
-
-
-async def simulate_latency(min_seconds: float = 0.5, max_seconds: float = 1.7) -> None:
-    await asyncio.sleep(random.uniform(min_seconds, max_seconds))
-
-
-def weighted_status(weights: tuple[tuple[str, float], ...]) -> str:
-    labels, probabilities = zip(*weights)
-    return random.choices(population=labels, weights=probabilities, k=1)[0]
-
-
-def _filled_form_url(user_id: str, form_url: str) -> str:
-    settings = get_settings()
-    slug = slugify(form_url)
-    return build_filled_form_url(settings.s3_bucket_url, user_id, slug)
 
 
 @router.post("", response_model=FormFillResponse)
 async def start_form_fill(request: FormFillRequest):
-    await simulate_latency()
-    job_id = str(uuid.uuid4())
-    status = weighted_status(FILL_STATUS_WEIGHTS)
-    filled_url = _filled_form_url(request.userId, str(request.formUrl)) if status == "complete" else None
-    return FormFillResponse(jobId=job_id, status=status, filledFormUrl=filled_url)
+    return await start_form_fill_job(request.userId, str(request.formUrl))
 
 
 @router.get("/{job_id}", response_model=FormFillResponse)
 async def poll_form_fill(
     job_id: str,
-    user_id: str = Query(..., alias="userId"),
+    user_id: str = Query(..., alias="userId"),  # kept for backward compatibility
     form_url: str = Query(..., alias="formUrl"),
 ):
-    await simulate_latency(0.25, 1.0)
-    status = weighted_status(FILL_STATUS_WEIGHTS)
-    filled_url = _filled_form_url(user_id, form_url) if status == "complete" else None
-    return FormFillResponse(jobId=job_id, status=status, filledFormUrl=filled_url)
+    _ = (user_id, form_url)
+    return await get_form_fill_job(job_id)

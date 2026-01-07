@@ -72,6 +72,40 @@ async def delete_s3_object(key: str, *, raise_on_error: bool = False) -> None:
         logger.warning("Failed to delete S3 object %s: %s", key, exc)
 
 
+async def download_s3_object(key: str) -> bytes:
+    bucket = _require_bucket_name()
+    client = get_s3_client()
+
+    def _download():
+        obj = client.get_object(Bucket=bucket, Key=key)
+        body = obj["Body"]
+        try:
+            return body.read()
+        finally:
+            body.close()
+
+    try:
+        return await asyncio.to_thread(_download)
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code in {"404", "NoSuchKey"}:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Requested object not found in storage.",
+            ) from exc
+        logger.exception("Failed to download S3 object %s", key)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to read object from storage.",
+        ) from exc
+    except BotoCoreError as exc:
+        logger.exception("Failed to download S3 object %s", key)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to read object from storage.",
+        ) from exc
+
+
 def _default_manifest(user_id: str) -> Manifest:
     return Manifest(
         userId=sanitize_user_id(user_id),

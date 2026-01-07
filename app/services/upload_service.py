@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import fitz  # type: ignore
 from fastapi import HTTPException, UploadFile, status
 
 from ..config import get_settings
@@ -38,14 +39,52 @@ async def _persist_manifest(user_id: str, manifest: Manifest) -> None:
     await save_manifest(user_id, manifest)
 
 
-async def _cleanup_failed_upload(object_key: str, info_key: str, openai_file_id: str | None) -> None:
+async def _cleanup_failed_upload(
+    object_key: str,
+    info_key: str,
+    openai_file_id: str | None,
+    extra_openai_file_ids: list[str] | None = None,
+) -> None:
     await delete_s3_object(object_key)
     await delete_s3_object(info_key)
-    if openai_file_id:
+    ids = [openai_file_id] + (extra_openai_file_ids or [])
+    for oid in ids:
+        if not oid:
+            continue
         try:
-            await delete_openai_file(openai_file_id)
+            await delete_openai_file(oid)
         except HTTPException:
-            logger.warning("Failed to roll back OpenAI file %s during upload cleanup", openai_file_id)
+            logger.warning("Failed to roll back OpenAI file %s during upload cleanup", oid)
+
+
+def _needs_pdf_conversion(content_type: str | None, file_name: str | None) -> bool:
+    if content_type and content_type.lower() == "application/pdf":
+        return False
+    suffix = (Path(file_name or "").suffix or "").lower()
+    return suffix != ".pdf"
+
+
+def _convert_document_to_pdf(payload: bytes, file_name: str | None) -> bytes:
+    suffix = (Path(file_name or "").suffix or "").lower().lstrip(".") or "png"
+    try:
+        doc = fitz.open(stream=payload, filetype=suffix)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported document format for extraction.",
+        ) from exc
+    try:
+        return doc.convert_to_pdf()
+    finally:
+        doc.close()
+
+
+async def _delete_temp_openai_files(file_ids: list[str]) -> None:
+    for file_id in file_ids:
+        try:
+            await delete_openai_file(file_id)
+        except HTTPException:
+            logger.warning("Failed to remove temporary OpenAI file %s", file_id)
 
 
 async def handle_upload(user_id: str, file: UploadFile) -> UploadResponse:
@@ -72,6 +111,7 @@ async def handle_upload(user_id: str, file: UploadFile) -> UploadResponse:
     await upload_bytes_to_s3(object_key, payload, content_type)
 
     openai_file_id: str | None = None
+    temp_openai_files: list[str] = []
     try:
         filename = file.filename or f"{slug}{extension}"
         openai_file_id = await upload_bytes_to_openai(filename, payload)
@@ -104,8 +144,28 @@ async def handle_upload(user_id: str, file: UploadFile) -> UploadResponse:
             detail="Failed to capture OpenAI file reference for extraction.",
         )
 
+    extraction_file_id = openai_file_id
+    if _needs_pdf_conversion(content_type, file.filename):
+        try:
+            converted_pdf = _convert_document_to_pdf(payload, file.filename)
+            extraction_file_id = await upload_bytes_to_openai(f"{slug}-converted.pdf", converted_pdf)
+            temp_openai_files.append(extraction_file_id)
+            logger.info("Converted %s to PDF for extraction (%s)", file.filename, extraction_file_id)
+        except HTTPException:
+            await _cleanup_failed_upload(object_key, info_key, openai_file_id, temp_openai_files)
+            temp_openai_files.clear()
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to convert %s to PDF for extraction", file.filename)
+            await _cleanup_failed_upload(object_key, info_key, openai_file_id, temp_openai_files)
+            temp_openai_files.clear()
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unable to process this document format for extraction.",
+            ) from exc
+
     try:
-        extraction = await extract_document_information(openai_file_id, file_name=file.filename)
+        extraction = await extract_document_information(extraction_file_id, file_name=file.filename)
         info_payload = extraction.model_dump_json(indent=2).encode("utf-8")
         await upload_bytes_to_s3(info_key, info_payload, "application/json")
         manifest_entry.status = "extracted"
@@ -116,15 +176,20 @@ async def handle_upload(user_id: str, file: UploadFile) -> UploadResponse:
             len(extraction.document_description),
         )
     except HTTPException:
-        await _cleanup_failed_upload(object_key, info_key, openai_file_id)
+        await _cleanup_failed_upload(object_key, info_key, openai_file_id, temp_openai_files)
+        temp_openai_files.clear()
         raise
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to persist extracted information for %s", slug)
-        await _cleanup_failed_upload(object_key, info_key, openai_file_id)
+        await _cleanup_failed_upload(object_key, info_key, openai_file_id, temp_openai_files)
+        temp_openai_files.clear()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to persist extracted information.",
         ) from exc
+    finally:
+        if temp_openai_files:
+            await _delete_temp_openai_files(temp_openai_files)
 
     manifest = await load_manifest(user_id)
     manifest = upsert_manifest_entry(manifest, manifest_entry)
@@ -132,7 +197,8 @@ async def handle_upload(user_id: str, file: UploadFile) -> UploadResponse:
     try:
         await _persist_manifest(user_id, manifest)
     except HTTPException:
-        await _cleanup_failed_upload(object_key, info_key, openai_file_id)
+        await _cleanup_failed_upload(object_key, info_key, openai_file_id, temp_openai_files)
+        temp_openai_files.clear()
         raise
 
     return UploadResponse(

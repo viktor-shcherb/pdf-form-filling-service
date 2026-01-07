@@ -55,3 +55,15 @@ def build_filled_form_url(base_url: str, user_id: str, form_slug: str) -> str:
 def extension_from_name(file_name: str | None) -> str:
     path = Path(file_name or "")
     return path.suffix or ".pdf"
+
+
+def build_form_source_key(user_id: str, form_slug: str) -> str:
+    return f"{sanitize_user_id(user_id)}/forms/{form_slug}/source.pdf"
+
+
+def build_form_schema_key(user_id: str, form_slug: str) -> str:
+    return f"{sanitize_user_id(user_id)}/forms/{form_slug}/schema.json"
+
+
+def build_form_filled_key(user_id: str, form_slug: str) -> str:
+    return f"{sanitize_user_id(user_id)}/forms/{form_slug}/filled.pdf"

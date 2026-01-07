@@ -20,7 +20,9 @@ class Settings(BaseModel):
     openai_org_id: str | None = None
     openai_file_purpose: str = "assistants"
     manifest_filename: str = "manifest.json"
-    information_extraction_model: str = "gpt-5-mini"
+    information_extraction_model: str = "gpt-4.1-mini"
+    form_fill_model: str = "gpt-4o-mini"
+    form_fill_max_concurrency: int = 4
 
 
 @lru_cache
@@ -43,5 +45,15 @@ def get_settings() -> Settings:
         information_extraction_model=os.getenv(
             "INFORMATION_EXTRACTION_MODEL",
             Settings.model_fields["information_extraction_model"].default,
+        ),
+        form_fill_model=os.getenv(
+            "FORM_FILL_MODEL",
+            Settings.model_fields["form_fill_model"].default,
+        ),
+        form_fill_max_concurrency=int(
+            os.getenv(
+                "FORM_FILL_MAX_CONCURRENCY",
+                Settings.model_fields["form_fill_max_concurrency"].default,
+            )
         ),
     )
