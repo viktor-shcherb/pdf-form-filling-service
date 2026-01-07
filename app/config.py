@@ -20,8 +20,8 @@ class Settings(BaseModel):
     openai_org_id: str | None = None
     openai_file_purpose: str = "assistants"
     manifest_filename: str = "manifest.json"
-    information_extraction_model: str = "gpt-4.1-mini"
-    form_fill_model: str = "gpt-4o-mini"
+    information_extraction_model: str = "gpt-5-mini"
+    form_fill_model: str = "gpt-5-mini"
     form_fill_max_concurrency: int = 4
 
 
